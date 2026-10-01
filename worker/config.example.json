@@ -1,0 +1,5 @@
+{
+  "state_dir": "/var/lib/chata-worker",
+  "ssh_target": "chata-worker@lobster-dev01",
+  "remote_data_dir": "/srv/chata-data"
+}

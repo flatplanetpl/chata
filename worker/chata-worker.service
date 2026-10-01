@@ -1,0 +1,16 @@
+[Unit]
+Description=Chata apartment search worker
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=chata-worker
+WorkingDirectory=/opt/chata
+ExecStart=/opt/chata/.venv/bin/python /opt/chata/worker/worker.py --config /etc/chata-worker/config.json --publish
+Environment=PYTHONUNBUFFERED=1
+StateDirectory=chata-worker
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/chata-worker
+NoNewPrivileges=true

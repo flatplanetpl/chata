@@ -1,0 +1,7 @@
+__pycache__/
+.venv/
+worker/config.json
+worker/secrets.env
+*.part
+runtime/images/
+assets/legacy/

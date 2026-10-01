@@ -1,0 +1,33 @@
+# Add as a custom dynamic configuration on the Coolify server after creating
+# /data/coolify/proxy/dynamic/chata-users with an htpasswd entry.
+http:
+  middlewares:
+    chata-auth:
+      basicAuth:
+        usersFile: /traefik/dynamic/chata-users
+  routers:
+    chata-https:
+      rule: Host(`chata.kveik.pl`)
+      entryPoints:
+        - https
+      middlewares:
+        - chata-auth
+      service: chata-tailnet
+      tls:
+        certResolver: letsencrypt-dns
+        domains:
+          - main: kveik.pl
+            sans:
+              - "*.kveik.pl"
+    chata-http:
+      rule: Host(`chata.kveik.pl`)
+      entryPoints:
+        - http
+      middlewares:
+        - redirect-to-https@file
+      service: chata-tailnet
+  services:
+    chata-tailnet:
+      loadBalancer:
+        servers:
+          - url: http://100.78.0.117:8088
