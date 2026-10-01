@@ -21,9 +21,9 @@ Klucz CloakBrowser, jeśli jest potrzebny, ustaw w prywatnym systemd drop-in jak
 
 ## Aplikacja i proxy
 
-W Coolify (`http://coolify:8000`) utwórz aplikację Docker Compose z repozytorium i plikiem `compose.yaml` na serwerze `lobster-dev01`. Kontener słucha na porcie 8080; port hosta `100.78.0.117:8088` jest związany wyłącznie z adresem Tailscale. Katalog `/srv/chata-data` jest montowany tylko do odczytu jako `/usr/share/nginx/html/runtime`. Caddy na `lobster-dev01` pozostaje na 80/443.
+Aplikacja Coolify `hws9lbkbogjvy9e7dhxvnjcc` używa `compose.yaml` na serwerze `lobster-dev01`. Kontener słucha na porcie 8080; port hosta `100.78.0.117:8088` jest związany wyłącznie z adresem Tailscale. Katalog `/srv/chata-data` jest montowany tylko do odczytu jako `/usr/share/nginx/html/runtime`. Caddy na `lobster-dev01` pozostaje na 80/443. Dawna aplikacja `hsk6cseab2tuninhnravbejx` na serwerze `coolify` jest zatrzymana i ma wyłączone automatyczne wdrażanie.
 
-Na serwerze `coolify` dodaj plik dynamicznej konfiguracji Traefik na podstawie `deploy/chata-traefik.example.yaml`. W `/data/coolify/proxy/dynamic/chata-users` umieść hash `htpasswd` dla użytkownika `chata`, a następnie skonfiguruj trasę `chata.kveik.pl` z HTTP Basic i certyfikatem wildcard. Hasło i hash nie są częścią repozytorium. DNS wildcard pozostaje bez zmian.
+Na serwerze `coolify` działa plik dynamicznej konfiguracji Traefik na podstawie `deploy/chata-traefik.example.yaml`. Hash HTTP Basic użytkownika `chata` jest w `/data/coolify/proxy/dynamic/chata-users`. Tymczasowe hasło można odczytać poleceniem `ssh ubuntu@coolify 'sudo cat /data/coolify/chata/initial-password'`; plik ma tryb 0600. Po otrzymaniu docelowego hasła należy wymienić hash i usunąć ten plik. Hasło i hash nie są częścią repozytorium. DNS wildcard pozostaje bez zmian.
 
 ## Sprawdzenie
 

@@ -8,6 +8,7 @@ http:
   routers:
     chata-https:
       rule: Host(`chata.kveik.pl`)
+      priority: 10000
       entryPoints:
         - https
       middlewares:
@@ -21,6 +22,7 @@ http:
               - "*.kveik.pl"
     chata-http:
       rule: Host(`chata.kveik.pl`)
+      priority: 10000
       entryPoints:
         - http
       middlewares:

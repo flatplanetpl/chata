@@ -14,7 +14,7 @@ Co dwie godziny osobna maszyna Linux w Tailscale wyszukuje mieszkania na OLX, Ot
 - [x] Przygotować trwały katalog danych, definicję montażu Coolify i trasę Traefik z HTTP Basic.
 - [x] Sprawdzić testy jednostkowe, próbki wyszukiwania i galerii sześciu portali, oraz niepełny transfer manifestu.
 - [ ] Zainstalować workera na maszynie Linux użytkownika i sprawdzić dwa uruchomienia timera.
-- [ ] Uruchomić aplikację przez Coolify, włączyć hasło HTTP Basic i sprawdzić `https://chata.kveik.pl` oraz trwałość po ponownym wdrożeniu.
+- [x] Uruchomić aplikację przez Coolify, włączyć hasło HTTP Basic i sprawdzić `https://chata.kveik.pl` oraz trwałość po ponownym wdrożeniu.
 
 ## Kryteria
 
@@ -27,3 +27,6 @@ Co dwie godziny osobna maszyna Linux w Tailscale wyszukuje mieszkania na OLX, Ot
 - `/srv/chata-data` na `lobster-dev01`: 13 nowych ofert, 24 galerie workera, 399 plików zdjęć łącznie z migracją dawnych galerii. Każda ścieżka w manifeście workera wskazuje istniejący plik.
 - Cztery dawne ogłoszenia nie udostępniały już galerii: dwa OLX aktywne/do weryfikacji, jedno OLX nieaktualne i jedno Gratka do weryfikacji.
 - Obraz Docker zbudował się na serwerze; `docker compose config` oraz składnia timera systemd zostały sprawdzone bez uruchamiania aplikacji.
+- Aplikacja Coolify `hws9lbkbogjvy9e7dhxvnjcc` działa na `lobster-dev01`, port hosta jest związany tylko z `100.78.0.117:8088`, a montaż `/srv/chata-data` ma `RW=false`.
+- Publiczne żądanie bez hasła zwraca 401, z hasłem 200. Przeglądarka pokazuje 39 ofert i 35 galerii; zdjęcie w galerii ładuje się, ręczny status pozostaje po odświeżeniu. Po ponownym wdrożeniu obraz nadal zwraca 200 i 399 plików pozostaje na serwerze.
+- Tymczasowe hasło strony jest przechowywane wyłącznie na serwerze `coolify` w `/data/coolify/chata/initial-password` (tryb 0600), poza repozytorium.
