@@ -97,10 +97,11 @@ class ListingHTML(HTMLParser):
 
 
 class Adapter:
-    def __init__(self, name, host, search_url, link_pattern, id_pattern):
+    def __init__(self, name, host, search_url, link_pattern, id_pattern, extra_search_urls=()):
         self.name = name
         self.host = host
         self.search_url = search_url
+        self.search_urls = (search_url, *extra_search_urls)
         self.link_pattern = re.compile(link_pattern)
         self.id_pattern = re.compile(id_pattern)
 
@@ -139,10 +140,15 @@ class Adapter:
     def parse(self, url, html):
         page = ListingHTML()
         page.feed(html)
-        title = page.meta.get("og:title", "")
+        title = page.meta["og:title"]
         structured = list(node for item in page.ld_json for node in nodes(item))
-        detail = next((node for node in structured if node.get("@type") in ("Product", "Offer")), {})
-        description = unescape(re.sub(r"<[^>]+>", " ", detail.get("description", page.meta.get("og:description", ""))))
+        detail = next((node for node in structured if node.get("@type") in ("Product", "Offer")), None)
+        if detail is None:
+            description = page.meta["og:description"]
+            detail = {}
+        else:
+            description = detail["description"]
+        description = unescape(re.sub(r"<[^>]+>", " ", description))
         text = normalized(title + " " + description)
         room_match = re.search(r"(\d+)\s*[- ]?\s*(?:pokoj|pok\.)", text)
         rent_match = re.search(r"(\d[\d\s]{2,6})\s*z[lł]", text)
@@ -242,11 +248,18 @@ class DomiportaAdapter(Adapter):
 
 ADAPTERS = (
     OlxAdapter("OLX", "olx.pl", "https://www.olx.pl/nieruchomosci/mieszkania/wynajem/wroclaw/q-o%C5%82taszyn/", r"/d/oferta/", r"-ID([A-Za-z0-9]+)"),
-    OtodomAdapter("Otodom", "otodom.pl", "https://www.otodom.pl/pl/wyniki/wynajem/mieszkanie/dolnoslaskie/wroclaw/wroclaw/wroclaw?query=O%C5%82taszyn", r"/pl/oferta/", r"-ID([A-Za-z0-9]+)"),
+    OtodomAdapter("Otodom", "otodom.pl", "https://www.otodom.pl/pl/wyniki/wynajem/mieszkanie%2C3-pokoje/dolnoslaskie/wroclaw/wroclaw/wroclaw/krzyki/oltaszyn", r"/pl/oferta/", r"-ID([A-Za-z0-9]+)", (
+        "https://www.otodom.pl/pl/wyniki/wynajem/mieszkanie%2C3-pokoje/dolnoslaskie/wroclaw/wroclaw/wroclaw/krzyki/partynice",
+        "https://www.otodom.pl/pl/wyniki/wynajem/mieszkanie%2C3-pokoje/dolnoslaskie/wroclaw/wroclaw/wroclaw/krzyki/klecina",
+        "https://www.otodom.pl/pl/wyniki/wynajem/mieszkanie/dolnoslaskie/wroclaw/wroclaw/wroclaw?query=O%C5%82taszyn",
+    )),
     GratkaAdapter("Gratka", "gratka.pl", "https://gratka.pl/nieruchomosci/mieszkania/wroclaw/oltaszyn/wynajem", r"/ob/\d+", r"/ob/(\d+)"),
     MorizonAdapter("Morizon", "morizon.pl", "https://www.morizon.pl/do-wynajecia/mieszkania/wroclaw/oltaszyn/", r"/oferta/", r"/oferta/[^/]*?(\d{6,})"),
     OkolicaAdapter("Okolica", "okolica.pl", "https://www.okolica.pl/mieszkanie/wynajme/wroclaw/oltaszyn/", r"/offer/show/", r"/offer/show/([^/]+)"),
-    DomiportaAdapter("Domiporta", "domiporta.pl", "https://www.domiporta.pl/mieszkanie/wynajme/dolnoslaskie/wroclaw", r"/nieruchomosci/wynajme-", r"/(\d{6,})(?:/|$)"),
+    DomiportaAdapter("Domiporta", "domiporta.pl", "https://www.domiporta.pl/mieszkanie/wynajme/dolnoslaskie/wroclaw/oltaszyn", r"/nieruchomosci/wynajme-", r"/(\d{6,})(?:/|$)", (
+        "https://www.domiporta.pl/mieszkanie/wynajme/dolnoslaskie/wroclaw/krzyki",
+        "https://www.domiporta.pl/mieszkanie/wynajme/dolnoslaskie/wroclaw",
+    )),
 )
 
 
@@ -284,6 +297,8 @@ def legacy_urls():
 def download_images(listing, image_root):
     paths = []
     for number, url in enumerate(listing["images"][:30]):
+        if urllib.parse.urlparse(url).scheme != "https":
+            raise ValueError("Gallery image URL must use HTTPS")
         name = hashlib.sha256((listing["id"] + "#" + str(number)).encode()).hexdigest()[:24] + ".jpg"
         path = image_root / name
         if not path.exists():
@@ -308,10 +323,17 @@ def record_issue(errors, adapter, field, url, error):
 
 
 def scan_new(adapter, page, manifest, image_root, old_urls, errors):
-    page.goto(adapter.search_url, wait_until="domcontentloaded", timeout=45000)
-    links = adapter.listing_links(page.content())
+    links = []
+    for search_url in adapter.search_urls:
+        try:
+            page.goto(search_url, wait_until="domcontentloaded", timeout=45000)
+            links.extend(adapter.listing_links(page.content()))
+        except Exception as error:
+            record_issue(errors, adapter, "search", search_url, error)
+    if not links:
+        raise ValueError("No search results from any portal query")
     found = 0
-    for url in links:
+    for url in dict.fromkeys(links):
         if url in old_urls:
             continue
         try:
@@ -362,7 +384,8 @@ def scan_source(adapter, browser, manifest, image_root, old_urls, existing_galle
         except Exception as error:
             search_failed = True
             found = 0
-            record_issue(errors, adapter, "search", adapter.search_url, error)
+            if not errors:
+                record_issue(errors, adapter, "search", adapter.search_url, error)
         backfill(adapter, page, manifest, image_root, old_urls, existing_galleries, errors)
     finally:
         page.close()
