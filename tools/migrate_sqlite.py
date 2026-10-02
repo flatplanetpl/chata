@@ -13,6 +13,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import storage
+from listing_parameters import from_text
 
 
 NAMESPACE = {"x": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
@@ -96,7 +97,7 @@ def migrate(database, workbook, galleries, manifest):
     for listing in previous["listings"].values():
         if listing["url"] in known_urls:
             continue
-        entry = storage.new_listing(listing)
+        entry = storage.new_listing({**listing, "parameters": from_text(listing["title"], listing["description"], listing["rent"])})
         for field in ("status", "notes"):
             if field in listing:
                 entry[field] = listing[field]

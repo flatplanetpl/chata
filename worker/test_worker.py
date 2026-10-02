@@ -15,6 +15,30 @@ import storage
 
 
 class WorkerTests(unittest.TestCase):
+    def test_existing_gallery_does_not_prevent_parameter_refresh(self):
+        url = "https://example.com/offer/123456"
+        entry = storage.new_listing({"id": "Test:123456", "url": url, "portal": "Test",
+            "title": "Mieszkanie", "description": "Opis", "location": "Ołtaszyn", "rooms": 3,
+            "rent": 3500, "found": "2026-10-01", "parameters": {
+                "area": None, "fees": None, "total": None, "pets": "Brak info", "fee_details": ""}})
+        entry.update(status="Ciekawe", notes="Zadzwonić")
+        snapshot = {"listings": {entry["id"]: entry}, "galleries": {url: ["runtime/images/saved.jpg"]}}
+        html = '<meta property="og:title" content="3 pokoje Ołtaszyn 3500 zł"><meta property="og:description" content="Mieszkanie o powierzchni 68 m². Czynsz administracyjny 1200 zł.">'
+        page = types.SimpleNamespace(goto=lambda *args, **kwargs: None, content=lambda: html)
+        adapter = worker.Adapter("Test", "example.com", "https://example.com/search", r"/offer/", r"/offer/(\d+)")
+        errors = []
+        worker.backfill(adapter, page, snapshot, Path("images"), {url}, errors)
+        self.assertEqual(errors, [])
+        self.assertEqual((entry["area"], entry["fees"], entry["total"]), (68, 1200, 4700))
+        self.assertEqual((entry["status"], entry["notes"]), ("Ciekawe", "Zadzwonić"))
+        self.assertEqual(snapshot["galleries"][url], ["runtime/images/saved.jpg"])
+        self.assertIsNotNone(entry["verified_at"])
+        previous = dict(entry)
+        page.content = lambda: '<meta property="og:title" content="3 pokoje Ołtaszyn 3500 zł"><meta property="og:description" content="Niepełny opis">'
+        worker.backfill(adapter, page, snapshot, Path("images"), {url}, errors)
+        self.assertEqual(entry, previous)
+        self.assertTrue(errors)
+
     def test_qualification(self):
         listing = {"rooms": 3, "rent": 3700, "description": "Kot do uzgodnienia", "location": "Ołtaszyn", "coordinates": None}
         self.assertTrue(worker.qualifies(listing))
@@ -113,7 +137,8 @@ class WorkerTests(unittest.TestCase):
             storage.initialize(path)
             entry = storage.new_listing({"id": "Test:123456", "url": "https://example.com/offer/123456",
                 "title": "Test", "description": "Kot OK", "portal": "Test", "location": "Ołtaszyn",
-                "rooms": 3, "rent": 3500, "found": "2026-10-01"})
+                "rooms": 3, "rent": 3500, "found": "2026-10-01",
+                "parameters": {"area": None, "fees": None, "total": None, "pets": "Tak", "fee_details": ""}})
             entry.update(status="Ciekawe", notes="Zadzwonić")
             saved = {"listings": {entry["id"]: entry}, "galleries": {}, "sources": {}, "last_run": None}
             storage.merge(path, saved)

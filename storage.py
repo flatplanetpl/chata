@@ -68,8 +68,8 @@ def new_listing(listing):
         "id": listing["id"], "url": listing["url"], "found": listing["found"],
         "listing_date": None, "fresh": "TAK", "status": "Do sprawdzenia", "activity": "Aktywne",
         "location": listing["location"], "portal": listing["portal"], "rent": listing["rent"],
-        "fees": None, "total": None, "area": None, "rooms": listing["rooms"], "pets": "Brak info",
-        "extras": "", "description": listing["description"], "fee_details": "", "notes": "",
+        "rooms": listing["rooms"], **listing["parameters"],
+        "extras": "", "description": listing["description"], "notes": "",
         "verified_at": None, "title": listing["title"],
     }
 
@@ -98,9 +98,13 @@ def merge(path, snapshot):
         connection.execute("BEGIN IMMEDIATE")
         columns = ",".join(FIELDS)
         placeholders = ",".join("?" for _ in FIELDS)
+        refreshed = ("title", "description", "location", "rent", "rooms", "area", "fees", "total", "pets", "fee_details", "verified_at")
+        updates = ",".join(f"{field}=excluded.{field}" for field in refreshed)
         for listing in snapshot["listings"].values():
             connection.execute(
-                f"INSERT INTO listings ({columns}) VALUES ({placeholders}) ON CONFLICT(url) DO NOTHING",
+                f"INSERT INTO listings ({columns}) VALUES ({placeholders}) ON CONFLICT(url) DO UPDATE SET {updates} "
+                "WHERE excluded.verified_at IS NOT NULL AND "
+                "(listings.verified_at IS NULL OR excluded.verified_at > listings.verified_at)",
                 [listing[field] for field in FIELDS],
             )
         merge_galleries(connection, snapshot["galleries"])

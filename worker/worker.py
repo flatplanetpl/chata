@@ -23,6 +23,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 import storage
+from listing_parameters import clean_text, from_text, from_otodom
 CENTER = (51.0616, 17.0168)
 NEARBY = ("oltaszyn", "partynice", "klecina", "wojszyce", "wysoka", "karkonoska")
 BLOCKED_PETS = re.compile(r"(?:bez|zakaz)\s+(?:zwierzat|kotow)|(?:zwierzeta|koty)\s+nie\s+(?:sa\s+)?akceptowane|nie\s+akceptujemy\s+(?:zwierzat|kotow)", re.I)
@@ -167,10 +168,12 @@ class Adapter:
         coordinates = None
         if "place:location:latitude" in page.meta and "place:location:longitude" in page.meta:
             coordinates = (float(page.meta["place:location:latitude"]), float(page.meta["place:location:longitude"]))
+        rent = int(float(str(price).replace(" ", "").replace(",", ".")))
         return {
             "id": self.identity(url), "url": url, "portal": self.name,
             "title": title, "description": description, "location": location,
-            "rooms": int(room_match.group(1)), "rent": int(float(str(price).replace(" ", "").replace(",", "."))),
+            "rooms": int(room_match.group(1)), "rent": rent,
+            "parameters": from_text(title, description, rent),
             "coordinates": coordinates, "images": self.gallery(page),
         }
 
@@ -181,17 +184,18 @@ class OlxAdapter(Adapter):
 
 class OtodomAdapter(Adapter):
     def parse(self, url, html):
-        listing = super().parse(url, html)
         page = ListingHTML()
         page.feed(html)
         ad = page.scripts["__NEXT_DATA__"]["props"]["pageProps"]["ad"]
-        listing["description"] = unescape(re.sub(r"<[^>]+>", " ", ad["description"]))
-        listing["rooms"] = int(ad["target"]["Rooms_num"][0])
-        listing["rent"] = int(next(item["value"] for item in ad["characteristics"] if item["key"] == "price"))
+        rent = float(next(item["value"] for item in ad["characteristics"] if item["key"] == "price"))
         coordinates = ad["location"]["coordinates"]
-        listing["coordinates"] = (coordinates["latitude"], coordinates["longitude"])
-        listing["location"] = ad["location"]["reverseGeocoding"]["locations"][-1]["fullName"]
-        return listing
+        return {
+            "id": self.identity(url), "url": url, "portal": self.name, "title": ad["title"],
+            "description": clean_text(ad["description"]), "rooms": int(ad["target"]["Rooms_num"][0]),
+            "rent": rent, "parameters": from_otodom(ad, rent), "images": self.gallery(page),
+            "coordinates": (coordinates["latitude"], coordinates["longitude"]),
+            "location": ad["location"]["reverseGeocoding"]["locations"][-1]["fullName"],
+        }
 
     def gallery(self, page):
         data = page.scripts.get("__NEXT_DATA__")
@@ -243,6 +247,7 @@ class OkolicaAdapter(Adapter):
             "title": detail["name"], "description": description,
             "location": detail["name"], "rooms": int(match.group(1)),
             "rent": int(float(detail["offers"]["price"])),
+            "parameters": from_text(detail["name"], description, float(detail["offers"]["price"])),
             "coordinates": None, "images": self.gallery(page),
         }
 
@@ -332,6 +337,7 @@ def scan_new(adapter, page, snapshot, image_root, known_urls, errors):
             entry = {key: value for key, value in listing.items() if key not in ("images", "coordinates")}
             entry["found"] = datetime.now(timezone.utc).isoformat()
             snapshot["listings"][identity] = storage.new_listing(entry)
+            snapshot["listings"][identity]["verified_at"] = entry["found"]
             snapshot["galleries"][url] = images
             found += 1
         except Exception as error:
@@ -339,23 +345,39 @@ def scan_new(adapter, page, snapshot, image_root, known_urls, errors):
     return found
 
 
+def refresh_listing(existing, listing):
+    entry = storage.new_listing({**listing, "found": existing["found"]})
+    for field in ("area", "fees"):
+        if existing[field] is not None and entry[field] is None:
+            raise ValueError("Incomplete listing: previously known parameter is missing: " + field)
+    for field in ("title", "description", "location", "rent", "rooms", "area", "fees", "total", "pets", "fee_details"):
+        existing[field] = entry[field]
+    existing["verified_at"] = datetime.now(timezone.utc).isoformat()
+
+
 def backfill(adapter, page, snapshot, image_root, known_urls, errors):
+    listings = {listing["url"]: listing for listing in snapshot["listings"].values()}
     for url in known_urls:
         host = urllib.parse.urlparse(url).hostname
         if host not in (adapter.host, "www." + adapter.host):
             continue
-        if url in snapshot["galleries"] and snapshot["galleries"][url]:
-            continue
         try:
             page.goto(url, wait_until="domcontentloaded", timeout=45000)
+            html = page.content()
+            try:
+                refresh_listing(listings[url], adapter.parse(url, html))
+            except Exception as error:
+                record_issue(errors, adapter, "listing", url, error)
+            if url in snapshot["galleries"] and snapshot["galleries"][url]:
+                continue
             detail = ListingHTML()
-            detail.feed(page.content())
+            detail.feed(html)
             images = adapter.gallery(detail)
             if not images:
                 raise ValueError("No gallery images")
             snapshot["galleries"][url] = download_images({"id": adapter.identity(url), "images": images}, image_root)
         except Exception as error:
-            record_issue(errors, adapter, "gallery", url, error)
+            record_issue(errors, adapter, "listing", url, error)
 
 
 def scan_source(adapter, browser, snapshot, image_root, known_urls):

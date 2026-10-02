@@ -20,6 +20,7 @@ class StorageTests(unittest.TestCase):
             "id": "Test:123", "url": "https://example.com/123", "portal": "Test",
             "title": "Mieszkanie", "description": "Kot OK", "location": "Ołtaszyn",
             "rent": 3500, "rooms": 3, "found": "2026-10-02T00:00:00+00:00",
+            "parameters": {"area": None, "fees": None, "total": None, "pets": "Brak info", "fee_details": ""},
         })
         self.snapshot = {
             "listings": {self.entry["id"]: self.entry},
@@ -28,6 +29,23 @@ class StorageTests(unittest.TestCase):
             "last_run": "2026-10-02T00:00:00+00:00",
         }
         storage.merge(self.database, self.snapshot)
+
+    def test_verified_parameters_are_updated_without_losing_manual_data(self):
+        storage.update_listing(self.database, self.entry["url"], {"status": "Ciekawe", "notes": "Zadzwonić"})
+        self.entry.update(area=68, fees=1200, total=4700, verified_at="2026-10-02T10:00:00+00:00")
+        storage.merge(self.database, self.snapshot)
+        after = storage.read(self.database)["listings"][self.entry["id"]]
+        self.assertEqual((after["area"], after["fees"], after["total"]), (68, 1200, 4700))
+        self.assertEqual((after["status"], after["notes"]), ("Ciekawe", "Zadzwonić"))
+        self.entry.update(area=10, verified_at="2026-10-01T10:00:00+00:00")
+        storage.merge(self.database, self.snapshot)
+        self.assertEqual(storage.read(self.database)["listings"][self.entry["id"]]["area"], 68)
+
+    def test_new_listing_keeps_extracted_parameters(self):
+        parameters = {"area": 68, "fees": 1200, "total": 4700, "pets": "Tak", "fee_details": "Media 1200 zł"}
+        entry = storage.new_listing({**self.entry, "parameters": parameters})
+        for field, value in parameters.items():
+            self.assertEqual(entry[field], value)
 
     def test_repeated_publication_preserves_manual_edits_and_other_listings(self):
         storage.update_listing(self.database, self.entry["url"], {"status": "Ciekawe", "notes": "Zadzwonić"})

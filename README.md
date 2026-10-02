@@ -8,6 +8,10 @@ SQLite jest jedynym magazynem ofert, statusów, uwag, galerii i raportów źród
 
 `storage.py` definiuje schemat wersji 1, transakcje, import wyników workera i spójne kopie przez SQLite Backup API. Publikacja dodaje nowe oferty i galerie, zachowuje ręczne dane oraz nie usuwa ofert przy błędzie portalu. Starszy raport nie zastępuje nowszego. Brak bazy albo niezgodny schemat zatrzymuje aplikację.
 
+Karty pokazują skrót opisu do 180 znaków. „Pokaż szczegóły” rozwija pełny opis, liczbę pokoi, lokalizację i informacje o rozpoznanych opłatach; „Zwiń szczegóły” przywraca skrót. Brak wartości oznaczony jest „—”, bez zamiany na zero.
+
+Worker zapisuje metraż, opłaty i informację o zwierzętach oraz odświeża istniejące oferty także wtedy, gdy mają już zdjęcia. Otodom dostarcza metraż i czynsz z pól `m` i `rent`; dla pozostałych adapterów parser rozpoznaje jednoznacznie opisane parametry w tytule/opisie. Niejednoznaczne lub niepodane wartości pozostają nieznane. Znany koszt razem obejmuje najem i rozpoznane opłaty; dodatkowe koszty parkingu czy prądu należy sprawdzić w pełnym opisie. Publikacja przyjmuje wyłącznie nowszą weryfikację oferty (`verified_at`) i zachowuje własne statusy, uwagi oraz datę znalezienia. Błąd odczytu źródła nie zmienia zapisanej oferty.
+
 `data/initial.sqlite3` zawiera 26 ofert z dotychczasowego arkusza oraz 11 dostępnych w repozytorium galerii (152 ścieżki zdjęć). To baza początkowa dla nowej instalacji; nie zawiera dodatkowych ofert ani plików zdjęć istniejących wyłącznie na serwerze. Arkusz, manifest i localStorage nie są już odczytywane przez aplikację.
 
 ## Migracja istniejącej instalacji
@@ -74,8 +78,11 @@ Klucz CloakBrowser, jeżeli potrzebny, ustaw w prywatnym systemd drop-in jako `C
 python3 -m pip install -r requirements.txt
 python3 -m unittest discover -s tests -v
 python3 -m unittest discover -s worker -v
+python3 tools/check_ui.py
 docker compose config --quiet
 docker build -t chata:sqlite-local .
 ```
 
 Testy obejmują import, współdzielenie statusów, równoległe zapisy, zachowanie ręcznych danych podczas publikacji, rollback, przerwanie transferu i błędy źródeł. Nie uruchamiają serwera ani prawdziwych wyszukiwań portali. Kopię działającej bazy wykonuj przez `python3 storage.py backup /srv/chata-data/chata.sqlite3 /ścieżka/do/nowej-kopii.sqlite3`.
+
+`tools/check_ui.py` wymaga pakietu Python `playwright` i zainstalowanego Chromium. Sprawdza rozwijanie i zwijanie opisów klawiaturą, nieznane parametry, wyszukiwanie w pełnym opisie i widok 320/390/1440 px przez klienta testowego Flask, bez uruchamiania serwera.
