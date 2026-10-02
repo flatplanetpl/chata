@@ -1,4 +1,8 @@
-FROM nginx:1.27-alpine
-COPY index.html data.xlsx legacy-galleries.json /usr/share/nginx/html/
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+FROM python:3.12-slim
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+COPY app.py storage.py index.html ./
+ENV CHATA_DATABASE=/data/chata.sqlite3
 EXPOSE 8080
+CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--workers", "2", "--access-logfile", "-", "app:create_app()"]

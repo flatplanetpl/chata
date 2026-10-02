@@ -1,6 +1,8 @@
 """Regression tests for qualification, identity, and repeated scans."""
 
-import json
+import shlex
+import shutil
+import subprocess
 import sys
 import tempfile
 import types
@@ -9,6 +11,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import worker
+import storage
 
 
 class WorkerTests(unittest.TestCase):
@@ -61,19 +64,17 @@ class WorkerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             config = {"state_dir": directory}
             with patch.dict(sys.modules, {"cloakbrowser": fake_module}), patch.object(worker, "ADAPTERS", (adapter,)), patch.object(worker, "download_images", return_value=[]):
+                path = Path(directory) / "chata.sqlite3"
+                storage.initialize(path)
                 worker.run(config)
-                path = Path(directory) / "manifest.json"
-                manifest = json.loads(path.read_text(encoding="utf8"))
-                manifest["listings"]["Test:123456"]["status"] = "Ciekawe"
-                manifest["listings"]["Test:123456"]["notes"] = "Zadzwonić"
-                path.write_text(json.dumps(manifest), encoding="utf8")
+                storage.update_listing(path, "https://example.com/offer/123456", {"status": "Ciekawe", "notes": "Zadzwonić"})
                 worker.run(config)
-                after = json.loads(path.read_text(encoding="utf8"))
+                after = storage.read(path)
             self.assertEqual(len(after["listings"]), 1)
             self.assertEqual(after["listings"]["Test:123456"]["status"], "Ciekawe")
             self.assertEqual(after["listings"]["Test:123456"]["notes"], "Zadzwonić")
 
-    def test_failed_image_transfer_does_not_publish_manifest(self):
+    def test_failed_image_transfer_does_not_publish_database(self):
         commands = []
 
         def fail_first(command, **kwargs):
@@ -82,7 +83,7 @@ class WorkerTests(unittest.TestCase):
 
         with patch.object(worker.subprocess, "run", side_effect=fail_first):
             with self.assertRaisesRegex(RuntimeError, "interrupted transfer"):
-                worker.upload({"ssh_target": "worker@example", "remote_data_dir": "/srv/chata-data"}, Path("manifest.json"), Path("images"))
+                worker.upload({"ssh_target": "worker@example", "remote_data_dir": "/srv/chata-data"}, Path("chata.sqlite3"), Path("images"))
         self.assertEqual(len(commands), 1)
         self.assertEqual(commands[0][0], "rsync")
 
@@ -108,14 +109,67 @@ class WorkerTests(unittest.TestCase):
         fake_module.launch = Browser
         adapter = worker.Adapter("Test", "example.com", "https://example.com/search", r"/offer/", r"/offer/(\d+)")
         with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "manifest.json"
-            saved = {"listings": {"Test:123456": {"status": "Ciekawe", "notes": "Zadzwonić"}}, "galleries": {}, "sources": {}}
-            path.write_text(json.dumps(saved), encoding="utf8")
+            path = Path(directory) / "chata.sqlite3"
+            storage.initialize(path)
+            entry = storage.new_listing({"id": "Test:123456", "url": "https://example.com/offer/123456",
+                "title": "Test", "description": "Kot OK", "portal": "Test", "location": "Ołtaszyn",
+                "rooms": 3, "rent": 3500, "found": "2026-10-01"})
+            entry.update(status="Ciekawe", notes="Zadzwonić")
+            saved = {"listings": {entry["id"]: entry}, "galleries": {}, "sources": {}, "last_run": None}
+            storage.merge(path, saved)
             with patch.dict(sys.modules, {"cloakbrowser": fake_module}), patch.object(worker, "ADAPTERS", (adapter,)):
                 worker.run({"state_dir": directory})
-            after = json.loads(path.read_text(encoding="utf8"))
+            after = storage.read(path)
             self.assertEqual(after["listings"], saved["listings"])
             self.assertEqual(after["sources"]["Test"]["status"], "error")
+
+    def test_publication_merges_snapshot_without_replacing_server_edits(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            remote = root / "server data"
+            remote.mkdir()
+            server_database = remote / "chata.sqlite3"
+            local_database = root / "worker.sqlite3"
+            storage.backup(worker.ROOT / "data" / "initial.sqlite3", server_database)
+            storage.backup(server_database, local_database)
+            listing = next(iter(storage.read(server_database)["listings"].values()))
+            storage.update_listing(server_database, listing["url"], {"notes": "Server edit"})
+            commands = []
+            real_run = subprocess.run
+
+            def transport(command, **kwargs):
+                commands.append(command)
+                if command[0] == "rsync":
+                    return
+                if command[0] == "scp":
+                    shutil.copyfile(command[2], command[3].split(":", 1)[1])
+                    return
+                self.assertEqual(command[0], "ssh")
+                real_run(shlex.split(command[2]), **kwargs)
+
+            config = {"ssh_target": "worker@example", "remote_data_dir": str(remote)}
+            with patch.object(worker.subprocess, "run", side_effect=transport):
+                worker.upload(config, local_database, root / "images")
+            after = storage.read(server_database)["listings"][listing["id"]]
+            self.assertEqual(after["notes"], "Server edit")
+            self.assertEqual(commands[0][0], "rsync")
+            self.assertEqual(list(remote.iterdir()), [server_database])
+
+    def test_interrupted_database_transfer_never_runs_import(self):
+        with tempfile.TemporaryDirectory() as directory:
+            database = Path(directory) / "worker.sqlite3"
+            storage.backup(worker.ROOT / "data" / "initial.sqlite3", database)
+            commands = []
+
+            def transport(command, **kwargs):
+                commands.append(command)
+                if command[0] == "scp":
+                    raise RuntimeError("interrupted database transfer")
+
+            with patch.object(worker.subprocess, "run", side_effect=transport):
+                with self.assertRaisesRegex(RuntimeError, "interrupted database transfer"):
+                    worker.upload({"ssh_target": "worker@example", "remote_data_dir": "/srv/chata-data"}, database, Path(directory))
+            self.assertFalse(any(command[0] == "ssh" and "python3" in command[2] for command in commands))
 
 
 if __name__ == "__main__":

@@ -5,3 +5,8 @@ assets
 photos.json
 sync_photos.py
 PLAN-WORKER-MIESZKAN.md
+tests
+tools
+data
+__pycache__
+.venv

@@ -4,5 +4,5 @@ services:
     ports:
       - "100.78.0.117:8088:8080"
     volumes:
-      - /srv/chata-data:/usr/share/nginx/html/runtime:ro
+      - /srv/chata-data:/data
     restart: unless-stopped

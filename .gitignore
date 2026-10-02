@@ -5,3 +5,7 @@ worker/secrets.env
 *.part
 runtime/images/
 assets/legacy/
+*.sqlite3-journal
+*.sqlite3-wal
+*.sqlite3-shm
+runtime/*.sqlite3

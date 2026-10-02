@@ -2,7 +2,18 @@
 
 ## Idea
 
-Co dwie godziny osobna maszyna Linux w Tailscale wyszukuje mieszkania na OLX, Otodom, Gratka, Morizon, Okolica i Domiporta. Nowe oferty spełniające kryteria trafiają do prywatnej strony ze statusem „Do sprawdzenia”. Zdjęcia są plikami lokalnymi, a dotychczasowy arkusz pozostaje źródłem ręcznych danych.
+Co dwie godziny osobna maszyna Linux w Tailscale wyszukuje mieszkania na OLX, Otodom, Gratka, Morizon, Okolica i Domiporta. Nowe oferty spełniające kryteria trafiają do prywatnej strony ze statusem „Do sprawdzenia”. Zdjęcia są plikami lokalnymi; oferty i ręczne dane są przechowywane w SQLite.
+
+## Przejście na SQLite — 2026-10-02
+
+- [x] Zastąpić odczyt Excela, manifestu i localStorage wspólną bazą oraz API.
+- [x] Przenieść 26 ofert i dostępne w repozytorium ścieżki galerii do `data/initial.sqlite3`.
+- [x] Zapisywać stan workera w SQLite i scalać publikacje transakcyjnie przez SSH z zachowaniem ręcznych zmian.
+- [x] Przygotować jednorazowy importer danych serwera i eksportów uwag z przeglądarek; instrukcja w [README.md](README.md#migracja-istniejącej-instalacji).
+- [x] Sprawdzić lokalnie testy, zapis przez API w Chromium i budowę obrazu Docker.
+- [ ] Zmigrować aktualne dane serwera i istniejącego workera, przenieść uwagi z używanych przeglądarek oraz wdrożyć nowy obraz.
+
+Poniższy postęp i weryfikacja opisują wcześniejsze wdrożenie z 2026-10-01, sprzed SQLite.
 
 ## Postęp
 

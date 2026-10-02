@@ -1,4 +1,4 @@
-"""Search apartment portals and publish immutable images plus an atomic manifest."""
+"""Search apartment portals and publish immutable images and transactional SQLite updates."""
 
 import argparse
 import hashlib
@@ -7,6 +7,9 @@ import math
 import os
 import re
 import subprocess
+import shlex
+import sys
+import uuid
 import tempfile
 import unicodedata
 import urllib.parse
@@ -18,6 +21,8 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+import storage
 CENTER = (51.0616, 17.0168)
 NEARBY = ("oltaszyn", "partynice", "klecina", "wojszyce", "wysoka", "karkonoska")
 BLOCKED_PETS = re.compile(r"(?:bez|zakaz)\s+(?:zwierzat|kotow)|(?:zwierzeta|koty)\s+nie\s+(?:sa\s+)?akceptowane|nie\s+akceptujemy\s+(?:zwierzat|kotow)", re.I)
@@ -273,27 +278,6 @@ def nodes(item):
             yield from nodes(item["@graph"])
 
 
-def legacy_urls():
-    import xml.etree.ElementTree as ET
-    import zipfile
-
-    namespace = {"x": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
-    with zipfile.ZipFile(ROOT / "data.xlsx") as book:
-        strings = ET.fromstring(book.read("xl/sharedStrings.xml"))
-        values = ["".join(part.text or "" for part in item.findall(".//x:t", namespace)) for item in strings.findall("x:si", namespace)]
-        sheet = ET.fromstring(book.read("xl/worksheets/sheet1.xml"))
-    urls = set()
-    for cell in sheet.findall(".//x:sheetData/x:row/x:c", namespace):
-        if not re.fullmatch(r"S\d+", cell.attrib["r"]):
-            continue
-        value = cell.find("x:v", namespace)
-        if value is not None:
-            url = values[int(value.text)] if cell.attrib.get("t") == "s" else value.text
-            if url and url.startswith("https://"):
-                urls.add(url.split("?")[0])
-    return urls
-
-
 def download_images(listing, image_root):
     paths = []
     for number, url in enumerate(listing["images"][:30]):
@@ -322,7 +306,7 @@ def record_issue(errors, adapter, field, url, error):
     print(json.dumps({"source": adapter.name, **issue}, ensure_ascii=False))
 
 
-def scan_new(adapter, page, manifest, image_root, old_urls, errors):
+def scan_new(adapter, page, snapshot, image_root, known_urls, errors):
     links = []
     for search_url in adapter.search_urls:
         try:
@@ -334,11 +318,11 @@ def scan_new(adapter, page, manifest, image_root, old_urls, errors):
         raise ValueError("No search results from any portal query")
     found = 0
     for url in dict.fromkeys(links):
-        if url in old_urls:
+        if url in known_urls:
             continue
         try:
             identity = adapter.identity(url)
-            if identity in manifest["listings"]:
+            if identity in snapshot["listings"]:
                 continue
             page.goto(url, wait_until="domcontentloaded", timeout=45000)
             listing = adapter.parse(url, page.content())
@@ -347,20 +331,20 @@ def scan_new(adapter, page, manifest, image_root, old_urls, errors):
             images = download_images(listing, image_root)
             entry = {key: value for key, value in listing.items() if key not in ("images", "coordinates")}
             entry["found"] = datetime.now(timezone.utc).isoformat()
-            manifest["listings"][identity] = entry
-            manifest["galleries"][url] = images
+            snapshot["listings"][identity] = storage.new_listing(entry)
+            snapshot["galleries"][url] = images
             found += 1
         except Exception as error:
             record_issue(errors, adapter, "listing", url, error)
     return found
 
 
-def backfill(adapter, page, manifest, image_root, old_urls, existing_galleries, errors):
-    for url in old_urls:
+def backfill(adapter, page, snapshot, image_root, known_urls, errors):
+    for url in known_urls:
         host = urllib.parse.urlparse(url).hostname
         if host not in (adapter.host, "www." + adapter.host):
             continue
-        if url in existing_galleries or url in manifest["galleries"]:
+        if url in snapshot["galleries"] and snapshot["galleries"][url]:
             continue
         try:
             page.goto(url, wait_until="domcontentloaded", timeout=45000)
@@ -369,35 +353,49 @@ def backfill(adapter, page, manifest, image_root, old_urls, existing_galleries, 
             images = adapter.gallery(detail)
             if not images:
                 raise ValueError("No gallery images")
-            manifest["galleries"][url] = download_images({"id": adapter.identity(url), "images": images}, image_root)
+            snapshot["galleries"][url] = download_images({"id": adapter.identity(url), "images": images}, image_root)
         except Exception as error:
-            record_issue(errors, adapter, "legacy_gallery", url, error)
+            record_issue(errors, adapter, "gallery", url, error)
 
 
-def scan_source(adapter, browser, manifest, image_root, old_urls, existing_galleries):
+def scan_source(adapter, browser, snapshot, image_root, known_urls):
     page = browser.new_page()
     errors = []
     search_failed = False
     try:
         try:
-            found = scan_new(adapter, page, manifest, image_root, old_urls, errors)
+            found = scan_new(adapter, page, snapshot, image_root, known_urls, errors)
         except Exception as error:
             search_failed = True
             found = 0
             if not errors:
                 record_issue(errors, adapter, "search", adapter.search_url, error)
-        backfill(adapter, page, manifest, image_root, old_urls, existing_galleries, errors)
+        backfill(adapter, page, snapshot, image_root, known_urls, errors)
     finally:
         page.close()
     status = "error" if search_failed else "partial" if errors else "ok"
-    manifest["sources"][adapter.name] = {"status": status, "new": found, "errors": errors, "checked_at": datetime.now(timezone.utc).isoformat()}
+    snapshot["sources"][adapter.name] = {"status": status, "new": found, "errors": errors, "checked_at": datetime.now(timezone.utc).isoformat()}
 
 
-def save_manifest(manifest, path):
-    with tempfile.NamedTemporaryFile("w", encoding="utf8", dir=path.parent, delete=False) as output:
-        json.dump(manifest, output, ensure_ascii=False, indent=2)
-        temporary = Path(output.name)
-    os.replace(temporary, path)
+def remote_command(target, *arguments):
+    subprocess.run(["ssh", target, shlex.join(str(argument) for argument in arguments)], check=True)
+
+
+def fetch_database(config, database):
+    target = config["ssh_target"]
+    remote = config["remote_data_dir"].rstrip("/")
+    token = uuid.uuid4().hex
+    module = f"{remote}/storage-{token}.py"
+    snapshot = f"{remote}/snapshot-{token}.sqlite3"
+    subprocess.run(["scp", "-q", str(ROOT / "storage.py"), f"{target}:{module}"], check=True)
+    try:
+        remote_command(target, "python3", module, "backup", f"{remote}/chata.sqlite3", snapshot)
+        temporary = database.with_suffix(".part")
+        subprocess.run(["scp", "-q", f"{target}:{snapshot}", str(temporary)], check=True)
+        storage.read(temporary)
+        os.replace(temporary, database)
+    finally:
+        remote_command(target, "rm", "-f", module, snapshot)
 
 
 def run(config, publish=False):
@@ -406,33 +404,45 @@ def run(config, publish=False):
     state_dir = Path(config["state_dir"])
     image_root = state_dir / "images"
     image_root.mkdir(parents=True, exist_ok=True)
-    manifest_path = state_dir / "manifest.json"
-    if publish and not manifest_path.exists():
-        target = config["ssh_target"]
-        remote = config["remote_data_dir"].rstrip("/")
-        subprocess.run(["scp", "-q", f"{target}:{remote}/manifest.json", str(manifest_path)], check=True)
-    manifest = json.loads(manifest_path.read_text(encoding="utf8")) if manifest_path.exists() else {"listings": {}, "galleries": {}, "sources": {}}
-    old_urls = legacy_urls()
-    existing_galleries = json.loads((ROOT / "legacy-galleries.json").read_text(encoding="utf8"))
+    database = state_dir / "chata.sqlite3"
+    if not database.exists():
+        if (state_dir / "manifest.json").exists():
+            raise ValueError("Migrate the existing worker manifest to SQLite before running")
+        if publish:
+            fetch_database(config, database)
+        else:
+            storage.backup(ROOT / "data" / "initial.sqlite3", database)
+    snapshot = storage.read(database)
+    known_urls = {listing["url"] for listing in snapshot["listings"].values()}
     browser = launch()
     try:
         for adapter in ADAPTERS:
-            scan_source(adapter, browser, manifest, image_root, old_urls, existing_galleries)
+            scan_source(adapter, browser, snapshot, image_root, known_urls)
     finally:
         browser.close()
-    manifest["last_run"] = datetime.now(timezone.utc).isoformat()
-    save_manifest(manifest, manifest_path)
+    snapshot["last_run"] = datetime.now(timezone.utc).isoformat()
+    storage.merge(database, snapshot)
     if publish:
-        upload(config, manifest_path, image_root)
-    print(json.dumps({"listings": len(manifest["listings"]), "sources": manifest["sources"]}, ensure_ascii=False))
+        upload(config, database, image_root)
+    print(json.dumps({"listings": len(snapshot["listings"]), "sources": snapshot["sources"]}, ensure_ascii=False))
 
 
-def upload(config, manifest_path, image_root):
+def upload(config, database, image_root):
     target = config["ssh_target"]
     remote = config["remote_data_dir"].rstrip("/")
     subprocess.run(["rsync", "-a", "--ignore-existing", "--delay-updates", "--exclude=*.part", str(image_root) + "/", f"{target}:{remote}/images/"], check=True)
-    subprocess.run(["scp", "-q", str(manifest_path), f"{target}:{remote}/manifest.json.part"], check=True)
-    subprocess.run(["ssh", target, "mv", f"{remote}/manifest.json.part", f"{remote}/manifest.json"], check=True)
+    token = uuid.uuid4().hex
+    remote_snapshot = f"{remote}/incoming-{token}.sqlite3"
+    module = f"{remote}/storage-{token}.py"
+    with tempfile.TemporaryDirectory() as directory:
+        snapshot = Path(directory) / "snapshot.sqlite3"
+        storage.backup(database, snapshot)
+        try:
+            subprocess.run(["scp", "-q", str(snapshot), f"{target}:{remote_snapshot}"], check=True)
+            subprocess.run(["scp", "-q", str(ROOT / "storage.py"), f"{target}:{module}"], check=True)
+            remote_command(target, "python3", module, "merge", f"{remote}/chata.sqlite3", remote_snapshot)
+        finally:
+            remote_command(target, "rm", "-f", remote_snapshot, module)
 
 
 if __name__ == "__main__":

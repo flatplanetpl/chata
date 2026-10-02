@@ -24,7 +24,7 @@ h1{font-size:clamp(30px,4vw,46px);margin:0 0 8px;letter-spacing:-.04em}.hero p{m
 </style>
 </head>
 <body><div class="shell">
-<section class="hero"><h1>Chata</h1><p>3-pokojowe mieszkania do wynajęcia — Ołtaszyn i okolice. Dotychczasowe oferty pochodzą z <b>data.xlsx</b>.</p><div id="source" class="source">Ładowanie ofert…</div></section>
+<section class="hero"><h1>Chata</h1><p>3-pokojowe mieszkania do wynajęcia — Ołtaszyn i okolice.</p><div id="source" class="source">Ładowanie ofert…</div></section>
 <section class="stats"><div class="stat"><span>Widoczne</span><b id="sCount">—</b></div><div class="stat"><span>Aktywne</span><b id="sActive">—</b></div><div class="stat"><span>Kot: TAK</span><b id="sPet">—</b></div><div class="stat"><span>Mediana najmu</span><b id="sMedian">—</b></div></section>
 <section class="filters"><div class="grid">
 <div class="field search"><label>Szukaj</label><input id="q" class="ctl" placeholder="Klecina, taras, garaż, klimatyzacja…"></div>
@@ -33,27 +33,38 @@ h1{font-size:clamp(30px,4vw,46px);margin:0 0 8px;letter-spacing:-.04em}.hero p{m
 <div class="field"><label>Maks. najem</label><input id="maxRent" type="number" value="3700" class="ctl"></div>
 <div class="field"><label>Sortowanie</label><select id="sort" class="ctl"><option value="found">Najnowsze znalezione</option><option value="listing">Najnowsze ogłoszenia</option><option value="rent">Najem: najtaniej</option><option value="total">Koszt razem: najtaniej</option><option value="area">Metraż: największy</option></select></div>
 </div></section>
+<p id="saveError" role="alert" style="color:var(--red)"></p>
 <main id="cards" class="cards"></main><div id="empty" class="empty">Brak ofert pasujących do filtrów.</div>
 </div>
 <dialog id="photoDialog" class="photo-dialog" aria-label="Zdjęcia mieszkania"><div class="photo-bar"><b id="photoTitle"></b><button id="photoClose" class="photo-close" type="button" aria-label="Zamknij zdjęcia">✕</button></div><div class="photo-stage"><button id="photoPrev" class="photo-nav" type="button" aria-label="Poprzednie zdjęcie">‹</button><img id="photoImage" alt=""><button id="photoNext" class="photo-nav" type="button" aria-label="Następne zdjęcie">›</button></div><p id="photoCaption" class="photo-caption"></p></dialog>
 <script>
-const H={found:'Data znalezienia',listing:'Data ogłoszenia',status:'Status',activity:'Aktywność',loc:'Lokalizacja / ulica',portal:'Portal',rent:'Najem [zł]',fees:'Opłaty znane [zł]',total:'Znany koszt razem [zł]',area:'Metraż [m²]',ppm:'Najem / m²',pet:'Kot / zwierzęta',extras:'Dodatki',desc:'Krótki opis / atuty',notes:'Uwagi własne',link:'Link',fresh:'Nowe?'};
+const H={found:'found',listing:'listing_date',status:'status',activity:'activity',loc:'location',portal:'portal',rent:'rent',fees:'fees',total:'total',area:'area',pet:'pets',extras:'extras',desc:'description',notes:'notes',link:'url',fresh:'fresh'};
 let rows=[],filtered=[],galleries={},currentPhotos=[],currentPhoto=0;const $=id=>document.getElementById(id);
-const num=v=>{const n=Number(v);return Number.isFinite(n)?n:null};
+const num=v=>{if(v===null||v==='')return null;const n=Number(v);return Number.isFinite(n)?n:null};
 const money=v=>num(v)==null?'—':new Intl.NumberFormat('pl-PL',{maximumFractionDigits:0}).format(num(v))+' zł';
 const area=v=>num(v)==null?'—':new Intl.NumberFormat('pl-PL',{maximumFractionDigits:1}).format(num(v))+' m²';
 const date=v=>v?String(v).slice(0,10):'—';
-const esc=s=>String(s??'').replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
-const key=r=>r[H.link]||[r[H.loc],r[H.rent],r[H.area]].join('|');
+const esc=s=>String(s).replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
+const key=r=>r[H.link];
 function statusClass(v){if(v==='Ciekawe')return'good';if(v==='Odrzucone'||v==='Nieaktualne')return'bad';if(v==='Do sprawdzenia')return'warn';return''}
 function petClass(v){if(v==='Tak')return'good';if(v==='Nie')return'bad';if(v==='Do uzgodnienia')return'warn';return''}
-function edits(){try{return JSON.parse(localStorage.getItem('chata-edits')||'{}')}catch{return{}}}
-function save(r,p){const e=edits(),k=key(r);e[k]=Object.assign({},e[k]||{},p);localStorage.setItem('chata-edits',JSON.stringify(e))}
-function applyEdits(){const e=edits();rows.forEach(r=>{const x=e[key(r)];if(x){if(x.status)r[H.status]=x.status;if(x.notes!=null)r[H.notes]=x.notes}})}
-function excelDate(v){if(typeof v==='number'){const d=new Date(Math.round((v-25569)*86400*1000));return d.toISOString().slice(0,10)}return v==null?null:String(v).slice(0,10)}
-function loadWorkbook(buf){const wb=XLSX.read(buf,{type:'array'}),ws=wb.Sheets.Mieszkania||wb.Sheets[wb.SheetNames[0]],grid=XLSX.utils.sheet_to_json(ws,{header:1,defval:null,raw:true}),hi=grid.findIndex(r=>r&&r.includes('Data znalezienia')&&r.includes('Link'));if(hi<0)throw Error('Nie znaleziono tabeli');const heads=grid[hi].map(x=>String(x??''));rows=grid.slice(hi+1).filter(r=>r.some(v=>v!==null&&v!=='')).map(r=>{const o={};heads.forEach((h,i)=>o[h]=r[i]??null);o[H.found]=excelDate(o[H.found]);o[H.listing]=excelDate(o[H.listing]);return o})}
-function addWorkerListings(manifest){const existing=new Set(rows.map(r=>r[H.link].split('?')[0]));for(const listing of Object.values(manifest.listings)){if(existing.has(listing.url))continue;rows.push({[H.found]:listing.found,[H.listing]:null,[H.fresh]:'TAK',[H.status]:'Do sprawdzenia',[H.activity]:'Aktywne',[H.loc]:listing.location,[H.portal]:listing.portal,[H.rent]:listing.rent,[H.fees]:null,[H.total]:null,[H.area]:null,[H.pet]:'Brak info',[H.extras]:'',[H.desc]:listing.description,[H.notes]:'',[H.link]:listing.url});existing.add(listing.url)}}
-function photoCard(r){const photos=galleries[r[H.link]];if(!photos)return'<div class="photo-empty">Zdjęcia niedostępne</div>';return'<button class="photo-open" type="button" data-gallery="'+esc(r[H.link])+'" aria-label="Zobacz '+photos.length+' zdjęć: '+esc(r[H.loc])+'"><img loading="lazy" src="'+esc(photos[0])+'" alt="'+esc(r[H.loc])+'"><span>Zobacz '+photos.length+' zdjęć</span></button>'}
+async function save(row, changes, control){
+  const controls=control.closest('.editin').querySelectorAll('select,textarea');
+  controls.forEach(input=>input.disabled=true);
+  $('saveError').textContent='';
+  try{
+    const response=await fetch('/api/listings',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:row.url,...changes})});
+    if(!response.ok)throw Error('Serwer odrzucił zapis ('+response.status+')');
+    Object.assign(row,changes);
+    if('status' in changes)filter();
+  }catch(error){
+    if('status' in changes)control.value=row.status;
+    $('saveError').textContent='Nie zapisano zmian: '+error.message+'. Spróbuj ponownie.';
+  }finally{
+    controls.forEach(input=>input.disabled=false);
+  }
+}
+function photoCard(r){const photos=galleries[r[H.link]];if(photos===undefined||photos.length===0)return'<div class="photo-empty">Zdjęcia niedostępne</div>';return'<button class="photo-open" type="button" data-gallery="'+esc(r[H.link])+'" aria-label="Zobacz '+photos.length+' zdjęć: '+esc(r[H.loc])+'"><img loading="lazy" src="'+esc(photos[0])+'" alt="'+esc(r[H.loc])+'"><span>Zobacz '+photos.length+' zdjęć</span></button>'}
 function showPhoto(){const image=$('photoImage');image.src=currentPhotos[currentPhoto];image.alt=$('photoTitle').textContent+' — zdjęcie '+(currentPhoto+1);$('photoCaption').textContent=(currentPhoto+1)+' / '+currentPhotos.length}
 function movePhoto(step){currentPhoto=(currentPhoto+step+currentPhotos.length)%currentPhotos.length;showPhoto()}
 function openGallery(link){currentPhotos=galleries[link];currentPhoto=0;const listing=rows.find(row=>row[H.link]===link);$('photoTitle').textContent=listing[H.loc];showPhoto();$('photoDialog').showModal()}
@@ -63,11 +74,31 @@ $('photoPrev').onclick=()=>movePhoto(-1);$('photoNext').onclick=()=>movePhoto(1)
 $('photoDialog').addEventListener('click',event=>{if(event.target===$('photoDialog'))closeGallery()});
 document.addEventListener('keydown',event=>{if(!$('photoDialog').open)return;if(event.key==='ArrowLeft')movePhoto(-1);if(event.key==='ArrowRight')movePhoto(1)});
 $('photoImage').onerror=()=>$('photoCaption').textContent='Nie udało się wczytać tego zdjęcia';
-function filter(){const q=$('q').value.toLowerCase().trim(),pet=$('pet').value,st=$('status').value,max=Number($('maxRent').value||999999);filtered=rows.filter(r=>{const blob=[r[H.loc],r[H.portal],r[H.extras],r[H.desc],r[H.pet],r[H.status]].join(' ').toLowerCase();if(q&&!blob.includes(q))return false;if(num(r[H.rent])!=null&&num(r[H.rent])>max)return false;if(pet==='yes'&&r[H.pet]!=='Tak')return false;if(pet==='allowed'&&r[H.pet]==='Nie')return false;if(st!=='all'&&r[H.status]!==st)return false;return true});const s=$('sort').value,ts=v=>v?Date.parse(v):0;filtered.sort((a,b)=>s==='listing'?ts(b[H.listing])-ts(a[H.listing]):s==='rent'?(num(a[H.rent])??1e9)-(num(b[H.rent])??1e9):s==='total'?(num(a[H.total])??1e9)-(num(b[H.total])??1e9):s==='area'?(num(b[H.area])??0)-(num(a[H.area])??0):ts(b[H.found])-ts(a[H.found]));render()}
+function compareNullable(a,b,descending=false){
+  if(a===null&&b===null)return 0;
+  if(a===null)return 1;
+  if(b===null)return -1;
+  return descending?b-a:a-b;
+}
+function filter(){const q=$('q').value.toLowerCase().trim(),pet=$('pet').value,st=$('status').value,max=($('maxRent').value===''?Infinity:Number($('maxRent').value));filtered=rows.filter(r=>{const blob=[r[H.loc],r[H.portal],r[H.extras],r[H.desc],r[H.pet],r[H.status]].join(' ').toLowerCase();if(q&&!blob.includes(q))return false;if(num(r[H.rent])!=null&&num(r[H.rent])>max)return false;if(pet==='yes'&&r[H.pet]!=='Tak')return false;if(pet==='allowed'&&r[H.pet]==='Nie')return false;if(st!=='all'&&r[H.status]!==st)return false;return true});const s=$('sort').value,ts=v=>v?Date.parse(v):0;filtered.sort((a,b)=>s==='listing'?ts(b[H.listing])-ts(a[H.listing]):s==='rent'?compareNullable(a[H.rent],b[H.rent]):s==='total'?compareNullable(a[H.total],b[H.total]):s==='area'?compareNullable(a[H.area],b[H.area],true):ts(b[H.found])-ts(a[H.found]));render()}
 function render(){const rents=filtered.map(r=>num(r[H.rent])).filter(v=>v!=null).sort((a,b)=>a-b),med=rents.length?(rents.length%2?rents[(rents.length-1)/2]:(rents[rents.length/2-1]+rents[rents.length/2])/2):null;$('sCount').textContent=filtered.length;$('sActive').textContent=filtered.filter(r=>r[H.activity]==='Aktywne').length;$('sPet').textContent=filtered.filter(r=>r[H.pet]==='Tak').length;$('sMedian').textContent=money(med);$('empty').style.display=filtered.length?'none':'block';
-$('cards').innerHTML=filtered.map(r=>'<article class="card '+(['Nieaktualne','Archiwum'].includes(r[H.activity])?'off':'')+'">'+photoCard(r)+'<div class="top"><div class="badges">'+(r[H.fresh]==='TAK'?'<span class="badge new">NOWE</span>':'')+'<span class="badge">'+esc(r[H.portal]||'portal')+'</span><span class="badge '+statusClass(r[H.status])+'">'+esc(r[H.status]||'—')+'</span></div><div class="title"><div><div class="loc">'+esc(r[H.loc]||'Bez lokalizacji')+'</div><div class="date">Znalezione '+date(r[H.found])+(r[H.listing]?' • ogłoszenie '+date(r[H.listing]):'')+'</div></div><div class="rent"><b>'+money(r[H.rent])+'</b><small>najem / mies.</small></div></div></div><div class="metrics"><div class="metric"><b>'+area(r[H.area])+'</b><span>metraż</span></div><div class="metric"><b>'+money(r[H.fees])+'</b><span>znane opłaty</span></div><div class="metric"><b>'+money(r[H.total])+'</b><span>koszt razem</span></div></div><div class="body"><p>'+esc(r[H.desc]||'Brak opisu')+'</p>'+(r[H.extras]?'<div class="extra"><b>Atuty:</b> '+esc(r[H.extras])+'</div>':'')+'<div class="row"><span>Kot / zwierzęta</span><span class="badge '+petClass(r[H.pet])+'">'+esc(r[H.pet]||'Brak info')+'</span></div></div><div class="foot"><a class="btn" target="_blank" rel="noopener" href="'+esc(r[H.link]||'#')+'">Otwórz ogłoszenie</a></div><details class="edit"><summary>Status i własne uwagi</summary><div class="editin"><select class="ctl e-status" data-key="'+esc(key(r))+'">'+['Ciekawe','Do sprawdzenia','Obejrzane','Odrzucone','Nieaktualne'].map(x=>'<option '+(r[H.status]===x?'selected':'')+'>'+x+'</option>').join('')+'</select><textarea class="ctl e-note" data-key="'+esc(key(r))+'" placeholder="np. zadzwonić, obejrzane, za daleko…">'+esc(r[H.notes]||'')+'</textarea></div></details></article>').join('');
-document.querySelectorAll('.e-status').forEach(x=>x.onchange=()=>{const r=rows.find(r=>key(r)===x.dataset.key);if(r){r[H.status]=x.value;save(r,{status:x.value});filter()}});document.querySelectorAll('.e-note').forEach(x=>x.onchange=()=>{const r=rows.find(r=>key(r)===x.dataset.key);if(r){r[H.notes]=x.value;save(r,{notes:x.value})}})}
+$('cards').innerHTML=filtered.map(r=>'<article class="card '+(['Nieaktualne','Archiwum'].includes(r[H.activity])?'off':'')+'">'+photoCard(r)+'<div class="top"><div class="badges">'+(r[H.fresh]==='TAK'?'<span class="badge new">NOWE</span>':'')+'<span class="badge">'+esc(r[H.portal])+'</span><span class="badge '+statusClass(r[H.status])+'">'+esc(r[H.status])+'</span></div><div class="title"><div><div class="loc">'+esc(r[H.loc])+'</div><div class="date">Znalezione '+date(r[H.found])+(r[H.listing]?' • ogłoszenie '+date(r[H.listing]):'')+'</div></div><div class="rent"><b>'+money(r[H.rent])+'</b><small>najem / mies.</small></div></div></div><div class="metrics"><div class="metric"><b>'+area(r[H.area])+'</b><span>metraż</span></div><div class="metric"><b>'+money(r[H.fees])+'</b><span>znane opłaty</span></div><div class="metric"><b>'+money(r[H.total])+'</b><span>koszt razem</span></div></div><div class="body"><p>'+esc(r[H.desc])+'</p>'+(r[H.extras]?'<div class="extra"><b>Atuty:</b> '+esc(r[H.extras])+'</div>':'')+'<div class="row"><span>Kot / zwierzęta</span><span class="badge '+petClass(r[H.pet])+'">'+esc(r[H.pet])+'</span></div></div><div class="foot"><a class="btn" target="_blank" rel="noopener" href="'+esc(r[H.link])+'">Otwórz ogłoszenie</a></div><details class="edit"><summary>Status i własne uwagi</summary><div class="editin"><select class="ctl e-status" data-key="'+esc(key(r))+'">'+['Ciekawe','Do sprawdzenia','Obejrzane','Odrzucone','Nieaktualne'].map(x=>'<option '+(r[H.status]===x?'selected':'')+'>'+x+'</option>').join('')+'</select><textarea class="ctl e-note" data-key="'+esc(key(r))+'" placeholder="np. zadzwonić, obejrzane, za daleko…">'+esc(r[H.notes])+'</textarea></div></details></article>').join('');
+document.querySelectorAll('.e-status').forEach(x=>x.onchange=()=>{const r=rows.find(r=>key(r)===x.dataset.key);if(r){save(r,{status:x.value},x)}});document.querySelectorAll('.e-note').forEach(x=>x.onchange=()=>{const r=rows.find(r=>key(r)===x.dataset.key);if(r){save(r,{notes:x.value},x)}})}
 ['q','pet','status','maxRent','sort'].forEach(id=>$(id).addEventListener(id==='q'||id==='maxRent'?'input':'change',filter));
-const sc=document.createElement('script');sc.src='https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';sc.onload=async()=>{try{const [sheet,legacy,worker]=await Promise.all([fetch('data.xlsx',{cache:'no-store'}),fetch('legacy-galleries.json',{cache:'no-store'}),fetch('runtime/manifest.json',{cache:'no-store'})]);if(!sheet.ok||!legacy.ok||!worker.ok)throw Error('Brak danych');const manifest=await worker.json();galleries={...await legacy.json(),...manifest.galleries};loadWorkbook(await sheet.arrayBuffer());addWorkerListings(manifest);applyEdits();filter();$('source').textContent='Źródło: data.xlsx + worker • '+rows.length+' ofert • '+Object.keys(galleries).length+' galerii • ostatni przebieg '+(manifest.last_run?new Date(manifest.last_run).toLocaleString('pl-PL'):'jeszcze nie wykonano')}catch(error){$('source').textContent='Nie udało się wczytać ofert: '+error.message}};sc.onerror=()=>{$('source').textContent='Brak biblioteki XLSX'};document.head.appendChild(sc);
+async function loadListings(){
+  try{
+    const response=await fetch('/api/listings',{cache:'no-store'});
+    if(!response.ok)throw Error('Błąd serwera ('+response.status+')');
+    const data=await response.json();
+    rows=Object.values(data.listings);
+    galleries=data.galleries;
+    filter();
+    const lastRun=data.last_run===null?'jeszcze nie wykonano':new Date(data.last_run).toLocaleString('pl-PL');
+    $('source').textContent=rows.length+' ofert • '+Object.keys(galleries).length+' galerii • ostatni przebieg '+lastRun;
+  }catch(error){
+    $('source').textContent='Nie udało się wczytać ofert: '+error.message;
+  }
+}
+loadListings();
 </script>
 </body></html>
