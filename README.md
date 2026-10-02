@@ -10,9 +10,11 @@ SQLite jest jedynym magazynem ofert, statusów, uwag, galerii i raportów źród
 
 Karty pokazują skrót opisu do 180 znaków. „Pokaż szczegóły” rozwija pełny opis, liczbę pokoi, lokalizację i informacje o rozpoznanych opłatach; „Zwiń szczegóły” przywraca skrót. Brak wartości oznaczony jest „—”, bez zamiany na zero.
 
+Oferty dodane od poprzedniego otwarcia strony mają delikatne zielonkawe podświetlenie i etykietę „Nowe od ostatniej wizyty”. Przeglądarka zapamiętuje identyfikatory ofert dopiero po poprawnym wczytaniu listy. Pierwsza wizyta ustala punkt odniesienia; filtry i sortowanie nie usuwają wyróżnień, a kolejne otwarcie lub odświeżenie liczy się jako nowa wizyta. Zapis jest osobny dla każdej przeglądarki i nie zmienia wspólnych statusów ani uwag. Brak dostępu do pamięci przeglądarki jest sygnalizowany na stronie.
+
 Worker zapisuje metraż, opłaty i informację o zwierzętach oraz odświeża istniejące oferty także wtedy, gdy mają już zdjęcia. Otodom dostarcza metraż i czynsz z pól `m` i `rent`; dla pozostałych adapterów parser rozpoznaje jednoznacznie opisane parametry w tytule/opisie. Niejednoznaczne lub niepodane wartości pozostają nieznane. Znany koszt razem obejmuje najem i rozpoznane opłaty; dodatkowe koszty parkingu czy prądu należy sprawdzić w pełnym opisie. Publikacja przyjmuje wyłącznie nowszą weryfikację oferty (`verified_at`) i zachowuje własne statusy, uwagi oraz datę znalezienia. Błąd odczytu źródła nie zmienia zapisanej oferty.
 
-`data/initial.sqlite3` zawiera 26 ofert z dotychczasowego arkusza oraz 11 dostępnych w repozytorium galerii (152 ścieżki zdjęć). To baza początkowa dla nowej instalacji; nie zawiera dodatkowych ofert ani plików zdjęć istniejących wyłącznie na serwerze. Arkusz, manifest i localStorage nie są już odczytywane przez aplikację.
+`data/initial.sqlite3` zawiera 26 ofert z dotychczasowego arkusza oraz 11 dostępnych w repozytorium galerii (152 ścieżki zdjęć). To baza początkowa dla nowej instalacji; nie zawiera dodatkowych ofert ani plików zdjęć istniejących wyłącznie na serwerze. Arkusz, manifest i dawny zapis uwag `chata-edits` w localStorage nie są już źródłami danych aplikacji.
 
 ## Migracja istniejącej instalacji
 

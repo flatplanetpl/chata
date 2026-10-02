@@ -1,5 +1,6 @@
 """Browser regression checks through Flask's test client, without starting a server."""
 
+import json
 import sys
 import tempfile
 from pathlib import Path
@@ -13,7 +14,7 @@ from app import create_app
 import storage
 
 
-def check_browser(client):
+def check_browser(client, database):
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch()
         context = browser.new_context(viewport={"width": 1440, "height": 1000})
@@ -49,8 +50,40 @@ def check_browser(client):
             expect(unknown.locator(".description-preview")).to_be_visible()
         page.locator("#q").fill("KONIEC OPISU")
         expect(page.locator(".card")).to_have_count(1)
+        check_visits(page, database)
         assert not errors, errors
         browser.close()
+
+
+def check_visits(page, database):
+    page.locator("#q").fill("")
+    expect(page.locator(".card.since-visit")).to_have_count(0)
+    expect(page.locator(".badge.new")).to_have_count(0)
+    previous = page.evaluate("localStorage.getItem('chata-visited-listings')")
+    assert len(json.loads(previous)) == 2
+    listing = next(iter(storage.read(database)["listings"].values()))
+    listing.update(id="Test:added", url="https://example.com/added", location="Dodane od wizyty", found="2000-01-01")
+    storage.merge(database, {"listings": {listing["id"]: listing}, "galleries": {}, "sources": {}, "last_run": None})
+    page.route("**/api/listings", lambda route: route.fulfill(status=503, body="Unavailable"))
+    page.reload()
+    expect(page.locator("#source")).to_contain_text("Nie udało się wczytać")
+    assert page.evaluate("localStorage.getItem('chata-visited-listings')") == previous
+    page.unroute("**/api/listings")
+    page.reload()
+    expect(page.locator(".card.since-visit")).to_have_count(1)
+    expect(page.locator(".card.since-visit .badge.new")).to_have_text("Nowe od ostatniej wizyty")
+    page.locator("#q").fill("Dodane od wizyty")
+    expect(page.locator(".card.since-visit")).to_have_count(1)
+    page.locator("#sort").select_option("rent")
+    expect(page.locator(".card.since-visit")).to_have_count(1)
+    page.reload()
+    expect(page.locator(".card")).to_have_count(3)
+    expect(page.locator(".card.since-visit")).to_have_count(0)
+    page.evaluate("localStorage.setItem('chata-visited-listings', 'broken')")
+    page.reload()
+    expect(page.locator("#visitError")).to_contain_text("Nie można odczytać")
+    expect(page.locator(".card")).to_have_count(3)
+    assert page.evaluate("localStorage.getItem('chata-visited-listings')") == "broken"
 
 
 def main():
@@ -68,8 +101,8 @@ def main():
                  "location": "Znane parametry", "description": "Krótki opis.", "area": 68, "fees": 1200, "total": 4700}
         storage.merge(database, {"listings": {"unknown": unknown, "known": known},
                                  "galleries": {}, "sources": {}, "last_run": None})
-        check_browser(create_app(database).test_client())
-    print("PASS: collapsed/full descriptions, keyboard, missing/known parameters, mobile, search, HTML escaping")
+        check_browser(create_app(database).test_client(), database)
+    print("PASS: descriptions, parameters, mobile, search, HTML escaping, visit highlights, reload, filters, failed load, invalid visit data")
 
 
 if __name__ == "__main__":

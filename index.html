@@ -11,8 +11,8 @@ h1{font-size:clamp(30px,4vw,46px);margin:0 0 8px;letter-spacing:-.04em}.hero p{m
 .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:16px 0}.stat{background:#fffffff2;border:1px solid var(--line);border-radius:15px;padding:15px 17px}.stat span{display:block;color:var(--muted);font-size:12px;font-weight:700}.stat b{font-size:24px}
 .filters{position:sticky;top:8px;z-index:5;background:#fffffff2;backdrop-filter:blur(12px);border:1px solid var(--line);border-radius:16px;padding:14px;box-shadow:0 12px 32px rgba(25,45,80,.09)}
 .grid{display:grid;grid-template-columns:minmax(250px,2fr) repeat(4,minmax(130px,1fr));gap:9px}.field label{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:800;margin:0 0 5px 3px}.ctl{width:100%;height:41px;border:1px solid var(--line);border-radius:10px;background:#fff;padding:0 10px;font:inherit}
-.cards{align-items:start;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-top:16px}.card{background:var(--card);border:1px solid var(--line);border-radius:17px;overflow:hidden;box-shadow:0 5px 18px rgba(25,45,80,.05);display:flex;flex-direction:column}.card.off{opacity:.6}
-.top{padding:16px 17px 12px;border-bottom:1px solid #edf1f6}.badges{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:9px}.badge{font-size:10.5px;font-weight:850;border-radius:999px;padding:5px 8px;background:#eef2f7;color:#566277}.good{background:#e7f6ee;color:var(--green)}.warn{background:#fff3d5;color:var(--amber)}.bad{background:#feeceb;color:var(--red)}.new{background:#e9f0ff;color:#174eaa}
+.cards{align-items:start;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-top:16px}.card{background:var(--card);border:1px solid var(--line);border-radius:17px;overflow:hidden;box-shadow:0 5px 18px rgba(25,45,80,.05);display:flex;flex-direction:column}.card.off{opacity:.6}.card.since-visit{border-color:#acd5c6;box-shadow:0 0 0 1px #acd5c62b,0 5px 18px rgba(25,45,80,.05)}.card.since-visit .top{background:#f0f8f4}.card.since-visit .badge.new{background:#e0f0e8;color:#256548}
+.top{padding:16px 17px 12px;border-bottom:1px solid #edf1f6}.badges{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:9px}.badge{font-size:10.5px;font-weight:850;border-radius:999px;padding:5px 8px;background:#eef2f7;color:#566277}.good{background:#e7f6ee;color:var(--green)}.warn{background:#fff3d5;color:var(--amber)}.bad{background:#feeceb;color:var(--red)}
 .title{display:flex;justify-content:space-between;gap:12px}.title>div:first-child{min-width:0}.loc{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere;font-size:18px;font-weight:850}.date{font-size:11px;color:var(--muted);margin-top:4px}.rent{text-align:right;white-space:nowrap}.rent b{font-size:23px;color:#114fc9}.rent small{display:block;color:var(--muted)}
 .metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:12px 17px 0}.metric{background:#f8fafc;border:1px solid #e8edf4;border-radius:10px;padding:9px}.metric b{display:block}.metric span{font-size:10px;color:var(--muted)}
 .body{padding:12px 17px;display:flex;flex-direction:column;gap:9px;flex:1}.body p{margin:0;color:#45536a;font-size:13px;line-height:1.5}.extra{font-size:12px;background:#f7f9fc;border-radius:9px;padding:9px}.row{display:flex;justify-content:space-between;border-top:1px dashed #e1e7ef;padding-top:9px;font-size:12px}.row span:first-child{color:var(--muted);font-weight:700}.foot{padding:12px 17px 15px;border-top:1px solid #edf1f6}.btn{display:block;text-align:center;text-decoration:none;border:0;border-radius:10px;padding:10px 12px;font-weight:800;background:var(--blue);color:white}
@@ -34,13 +34,15 @@ h1{font-size:clamp(30px,4vw,46px);margin:0 0 8px;letter-spacing:-.04em}.hero p{m
 <div class="field"><label>Maks. najem</label><input id="maxRent" type="number" value="3700" class="ctl"></div>
 <div class="field"><label>Sortowanie</label><select id="sort" class="ctl"><option value="found">Najnowsze znalezione</option><option value="listing">Najnowsze ogłoszenia</option><option value="rent">Najem: najtaniej</option><option value="total">Koszt razem: najtaniej</option><option value="area">Metraż: największy</option></select></div>
 </div></section>
+<p id="visitError" role="status" style="color:var(--amber)"></p>
 <p id="saveError" role="alert" style="color:var(--red)"></p>
 <main id="cards" class="cards"></main><div id="empty" class="empty">Brak ofert pasujących do filtrów.</div>
 </div>
 <dialog id="photoDialog" class="photo-dialog" aria-label="Zdjęcia mieszkania"><div class="photo-bar"><b id="photoTitle"></b><button id="photoClose" class="photo-close" type="button" aria-label="Zamknij zdjęcia">✕</button></div><div class="photo-stage"><button id="photoPrev" class="photo-nav" type="button" aria-label="Poprzednie zdjęcie">‹</button><img id="photoImage" alt=""><button id="photoNext" class="photo-nav" type="button" aria-label="Następne zdjęcie">›</button></div><p id="photoCaption" class="photo-caption"></p></dialog>
 <script>
-const H={found:'found',listing:'listing_date',status:'status',activity:'activity',loc:'location',portal:'portal',rent:'rent',fees:'fees',total:'total',area:'area',pet:'pets',extras:'extras',desc:'description',notes:'notes',link:'url',fresh:'fresh'};
-let rows=[],filtered=[],galleries={},currentPhotos=[],currentPhoto=0;const $=id=>document.getElementById(id);
+const H={found:'found',listing:'listing_date',status:'status',activity:'activity',loc:'location',portal:'portal',rent:'rent',fees:'fees',total:'total',area:'area',pet:'pets',extras:'extras',desc:'description',notes:'notes',link:'url'};
+let rows=[],filtered=[],galleries={},currentPhotos=[],currentPhoto=0;
+let newListingIds=new Set();const $=id=>document.getElementById(id);
 const num=v=>{if(v===null||v==='')return null;const n=Number(v);return Number.isFinite(n)?n:null};
 const money=v=>num(v)==null?'—':new Intl.NumberFormat('pl-PL',{maximumFractionDigits:0}).format(num(v))+' zł';
 const area=v=>num(v)==null?'—':new Intl.NumberFormat('pl-PL',{maximumFractionDigits:1}).format(num(v))+' m²';
@@ -98,9 +100,24 @@ function listingDescription(row){
     '<p class="detail-note">Znany koszt razem to najem i rozpoznane opłaty. Dodatkowe koszty, np. parking i prąd, sprawdź w opisie. „—” oznacza brak danych.</p></details>';
 }
 function render(){const rents=filtered.map(r=>num(r[H.rent])).filter(v=>v!=null).sort((a,b)=>a-b),med=rents.length?(rents.length%2?rents[(rents.length-1)/2]:(rents[rents.length/2-1]+rents[rents.length/2])/2):null;$('sCount').textContent=filtered.length;$('sActive').textContent=filtered.filter(r=>r[H.activity]==='Aktywne').length;$('sPet').textContent=filtered.filter(r=>r[H.pet]==='Tak').length;$('sMedian').textContent=money(med);$('empty').style.display=filtered.length?'none':'block';
-$('cards').innerHTML=filtered.map(r=>'<article class="card '+(['Nieaktualne','Archiwum'].includes(r[H.activity])?'off':'')+'">'+photoCard(r)+'<div class="top"><div class="badges">'+(r[H.fresh]==='TAK'?'<span class="badge new">NOWE</span>':'')+'<span class="badge">'+esc(r[H.portal])+'</span><span class="badge '+statusClass(r[H.status])+'">'+esc(r[H.status])+'</span></div><div class="title"><div><div class="loc">'+esc(r[H.loc])+'</div><div class="date">Znalezione '+date(r[H.found])+(r[H.listing]?' • ogłoszenie '+date(r[H.listing]):'')+'</div></div><div class="rent"><b>'+money(r[H.rent])+'</b><small>najem / mies.</small></div></div></div><div class="metrics"><div class="metric"><b>'+area(r[H.area])+'</b><span>metraż</span></div><div class="metric"><b>'+money(r[H.fees])+'</b><span>znane opłaty</span></div><div class="metric"><b>'+money(r[H.total])+'</b><span>znany koszt razem</span></div></div><div class="body">'+listingDescription(r)+(r[H.extras]?'<div class="extra"><b>Atuty:</b> '+esc(r[H.extras])+'</div>':'')+'<div class="row"><span>Kot / zwierzęta</span><span class="badge '+petClass(r[H.pet])+'">'+esc(r[H.pet])+'</span></div></div><div class="foot"><a class="btn" target="_blank" rel="noopener" href="'+esc(r[H.link])+'">Otwórz ogłoszenie</a></div><details class="edit"><summary>Status i własne uwagi</summary><div class="editin"><select class="ctl e-status" data-key="'+esc(key(r))+'">'+['Ciekawe','Do sprawdzenia','Obejrzane','Odrzucone','Nieaktualne'].map(x=>'<option '+(r[H.status]===x?'selected':'')+'>'+x+'</option>').join('')+'</select><textarea class="ctl e-note" data-key="'+esc(key(r))+'" placeholder="np. zadzwonić, obejrzane, za daleko…">'+esc(r[H.notes])+'</textarea></div></details></article>').join('');
+$('cards').innerHTML=filtered.map(r=>'<article class="card '+(['Nieaktualne','Archiwum'].includes(r[H.activity])?'off ':'')+(newListingIds.has(r.id)?'since-visit':'')+'">'+photoCard(r)+'<div class="top"><div class="badges">'+(newListingIds.has(r.id)?'<span class="badge new">Nowe od ostatniej wizyty</span>':'')+'<span class="badge">'+esc(r[H.portal])+'</span><span class="badge '+statusClass(r[H.status])+'">'+esc(r[H.status])+'</span></div><div class="title"><div><div class="loc">'+esc(r[H.loc])+'</div><div class="date">Znalezione '+date(r[H.found])+(r[H.listing]?' • ogłoszenie '+date(r[H.listing]):'')+'</div></div><div class="rent"><b>'+money(r[H.rent])+'</b><small>najem / mies.</small></div></div></div><div class="metrics"><div class="metric"><b>'+area(r[H.area])+'</b><span>metraż</span></div><div class="metric"><b>'+money(r[H.fees])+'</b><span>znane opłaty</span></div><div class="metric"><b>'+money(r[H.total])+'</b><span>znany koszt razem</span></div></div><div class="body">'+listingDescription(r)+(r[H.extras]?'<div class="extra"><b>Atuty:</b> '+esc(r[H.extras])+'</div>':'')+'<div class="row"><span>Kot / zwierzęta</span><span class="badge '+petClass(r[H.pet])+'">'+esc(r[H.pet])+'</span></div></div><div class="foot"><a class="btn" target="_blank" rel="noopener" href="'+esc(r[H.link])+'">Otwórz ogłoszenie</a></div><details class="edit"><summary>Status i własne uwagi</summary><div class="editin"><select class="ctl e-status" data-key="'+esc(key(r))+'">'+['Ciekawe','Do sprawdzenia','Obejrzane','Odrzucone','Nieaktualne'].map(x=>'<option '+(r[H.status]===x?'selected':'')+'>'+x+'</option>').join('')+'</select><textarea class="ctl e-note" data-key="'+esc(key(r))+'" placeholder="np. zadzwonić, obejrzane, za daleko…">'+esc(r[H.notes])+'</textarea></div></details></article>').join('');
 document.querySelectorAll('.e-status').forEach(x=>x.onchange=()=>{const r=rows.find(r=>key(r)===x.dataset.key);if(r){save(r,{status:x.value},x)}});document.querySelectorAll('.e-note').forEach(x=>x.onchange=()=>{const r=rows.find(r=>key(r)===x.dataset.key);if(r){save(r,{notes:x.value},x)}})}
 ['q','pet','status','maxRent','sort'].forEach(id=>$(id).addEventListener(id==='q'||id==='maxRent'?'input':'change',filter));
+function loadPreviousVisit(){
+  const saved=localStorage.getItem('chata-visited-listings');
+  if(saved===null)return;
+  const ids=JSON.parse(saved);
+  if(!Array.isArray(ids)||ids.some(id=>typeof id!=='string'))throw Error('Nieprawidłowy zapis wizyty');
+  const previousIds=new Set(ids);
+  newListingIds=new Set(rows.filter(row=>!previousIds.has(row.id)).map(row=>row.id));
+}
+function rememberVisit(){
+  try{
+    localStorage.setItem('chata-visited-listings',JSON.stringify(rows.map(row=>row.id)));
+  }catch(error){
+    $('visitError').textContent='Nie można zapisać wizyty w tej przeglądarce. Oznaczanie nowych ofert przy kolejnej wizycie może być nieaktualne.';
+  }
+}
 async function loadListings(){
   try{
     const response=await fetch('/api/listings',{cache:'no-store'});
@@ -108,7 +125,15 @@ async function loadListings(){
     const data=await response.json();
     rows=Object.values(data.listings);
     galleries=data.galleries;
+    let visitLoaded=false;
+    try{
+      loadPreviousVisit();
+      visitLoaded=true;
+    }catch(error){
+      $('visitError').textContent='Nie można odczytać poprzedniej wizyty w tej przeglądarce. Nowe oferty nie zostały oznaczone.';
+    }
     filter();
+    if(visitLoaded)rememberVisit();
     const lastRun=data.last_run===null?'jeszcze nie wykonano':new Date(data.last_run).toLocaleString('pl-PL');
     $('source').textContent=rows.length+' ofert • '+Object.keys(galleries).length+' galerii • ostatni przebieg '+lastRun;
   }catch(error){
